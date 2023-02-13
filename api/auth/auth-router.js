@@ -1,6 +1,10 @@
 // `checkUsernameFree`, `checkUsernameExists` ve `checkPasswordLength` gereklidir (require)
 // `auth-middleware.js` deki middleware fonksiyonları. Bunlara burda ihtiyacınız var!
+const router = require("express").Router();
 
+const md = require("./auth-middleware");
+const UsersModel = require("../users/users-model");
+const bcrypt = require("bcryptjs");
 
 /**
   1 [POST] /api/auth/register { "username": "sue", "password": "1234" }
@@ -25,7 +29,25 @@
   }
  */
 
+router.post(
+  "/register",
+  md.sifreGecerlimi,
+  md.usernameBostami,
+  (req, res, next) => {
+    try {
+      const newUser = req.body;
+      const hash = bcrypt.hashSync(newUser.password, 8);
 
+      newUser.password = hash;
+
+      UsersModel.ekle(newUser).then((user) => {
+        res.status(200).json(user);
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 /**
   2 [POST] /api/auth/login { "username": "sue", "password": "1234" }
 
@@ -41,8 +63,23 @@
     "mesaj": "Geçersiz kriter"
   }
  */
+router.post("/login", md.usernameVarmi, (req, res, next) => {
+  try {
+    const presentUser = req.user;
+    const userPassword = presentUser.password;
 
+    const isEqualPassword = bcrypt.compareSync(req.body.password, userPassword);
 
+    if (!isEqualPassword) {
+      next({ status: 401, message: "Geçersiz kriter" });
+    } else {
+      req.session.user = presentUser;
+      res.json({ message: `Hoşgeldin ${presentUser.username}` });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
 /**
   3 [GET] /api/auth/logout
 
@@ -58,6 +95,31 @@
     "mesaj": "oturum bulunamadı"
   }
  */
+router.get("/logout", (req, res, next) => {
+  try {
+    if (req.session.user) {
+      req.session.destroy((err) => {
+        if (err) {
+          next({
+            message: "Logout hata",
+          });
+        } else {
+          next({
+            status: 200,
+            message: "çıkış yapildi",
+          });
+        }
+      });
+    } else {
+      next({
+        status: 200,
+        message: "oturum bulunamadı",
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
 
- 
 // Diğer modüllerde kullanılabilmesi için routerı "exports" nesnesine eklemeyi unutmayın.
+module.exports = router;
